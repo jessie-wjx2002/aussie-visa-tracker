@@ -209,7 +209,7 @@
         </label>
         <input id="visa-expiry" type="date"
           class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl focus:border-emerald-500 focus:outline-none" />
-        <p class="mt-3 text-lg text-slate-600">Used to detect if reaching 730 days is still mathematically possible.</p>
+        <p class="mt-3 text-lg text-slate-600">Powers your safety buffer: visa days left minus days still needed in Australia.</p>
       </section>
 
       <!-- Historical Flight Logger -->
@@ -267,9 +267,10 @@
 
     const TARGET_DAYS = 730;
     const WINDOW_YEARS = 5;
-    /** Days 0–90 drive the dashboard HSL background (red → green). */
-    const BG_SPECTRUM_MAX = 90;
+    /** Breathing room at or above this value = full green on the dashboard. */
+    const BREATHING_ROOM_MAX = 365;
     const FAIL_GREY = '#6b7280';
+    const NO_VISA_BG = '#e2e8f0';
 
     // ═══════════════════════════════════════════════════════════════════════
     // Supabase client
@@ -366,32 +367,48 @@
       return Math.min(total, TARGET_DAYS);
     }
 
-    function isRequirementFailed(bankedDays) {
-      const daysNeeded = Math.max(0, TARGET_DAYS - bankedDays);
-      const visaDaysLeft = daysUntil(VISA_CYCLE_END);
-      return Boolean(VISA_CYCLE_END && daysNeeded > visaDaysLeft);
-    }
-
-    function getStatusState(bankedDays) {
-      const daysNeeded = Math.max(0, TARGET_DAYS - bankedDays);
-      const visaDaysLeft = daysUntil(VISA_CYCLE_END);
-
-      if (isRequirementFailed(bankedDays)) {
-        return { zone: 'fail', daysNeeded, visaDaysLeft };
-      }
-      if (bankedDays >= TARGET_DAYS) {
-        return { zone: 'safe', daysNeeded: 0, visaDaysLeft };
-      }
-      return { zone: 'progress', daysNeeded, visaDaysLeft };
+    /** Days still required in Australia to reach the 730-day target. */
+    function daysStillNeeded(bankedDays) {
+      return Math.max(0, TARGET_DAYS - bankedDays);
     }
 
     /**
-     * HSL spectrum: hue 0 (red) → 30 (orange) → 60 (yellow) → 120 (green)
-     * Smooth day-by-day steps from 0 up to BG_SPECTRUM_MAX (90+ stays green).
+     * Safety buffer: visa days remaining minus days still needed in Australia.
+     * Positive = days she can safely be outside Australia while still making 730.
      */
-    function hslSpectrumGradient(days) {
-      const clamped = Math.min(Math.max(days, 0), BG_SPECTRUM_MAX);
-      const t = clamped / BG_SPECTRUM_MAX;
+    function calculateBreathingRoom(bankedDays) {
+      if (!VISA_CYCLE_END) return null;
+      const visaDaysLeft = daysUntil(VISA_CYCLE_END);
+      const needed = daysStillNeeded(bankedDays);
+      if (bankedDays >= TARGET_DAYS) return visaDaysLeft;
+      return visaDaysLeft - needed;
+    }
+
+    function isRequirementFailed(bankedDays) {
+      const room = calculateBreathingRoom(bankedDays);
+      return room !== null && room < 0;
+    }
+
+    function getStatusState(bankedDays) {
+      const daysNeeded = daysStillNeeded(bankedDays);
+      const visaDaysLeft = daysUntil(VISA_CYCLE_END);
+      const breathingRoom = calculateBreathingRoom(bankedDays);
+
+      if (isRequirementFailed(bankedDays)) {
+        return { zone: 'fail', daysNeeded, visaDaysLeft, breathingRoom };
+      }
+      if (bankedDays >= TARGET_DAYS) {
+        return { zone: 'safe', daysNeeded: 0, visaDaysLeft, breathingRoom };
+      }
+      return { zone: 'progress', daysNeeded, visaDaysLeft, breathingRoom };
+    }
+
+    /**
+     * HSL spectrum by breathing room: 120 green (plenty of buffer) → 60 yellow → 30 orange → 0 red (none left).
+     */
+    function hslBreathingRoomGradient(breathingRoom) {
+      const clamped = Math.min(Math.max(breathingRoom, 0), BREATHING_ROOM_MAX);
+      const t = clamped / BREATHING_ROOM_MAX;
       const hueStart = t * 120;
       const hueEnd = Math.min(120, hueStart + 14);
       const sat = 72;
@@ -404,7 +421,15 @@
 
     function applyDashboardBackground(bankedDays) {
       const dashboard = $('dashboard');
-      dashboard.classList.remove('dashboard-failed', 'dashboard-spectrum');
+      dashboard.classList.remove('dashboard-failed', 'dashboard-spectrum', 'dashboard-neutral');
+
+      const breathingRoom = calculateBreathingRoom(bankedDays);
+
+      if (breathingRoom === null) {
+        dashboard.style.background = NO_VISA_BG;
+        dashboard.classList.add('dashboard-neutral');
+        return;
+      }
 
       if (isRequirementFailed(bankedDays)) {
         dashboard.style.background = FAIL_GREY;
@@ -413,7 +438,7 @@
       }
 
       dashboard.classList.add('dashboard-spectrum');
-      dashboard.style.background = hslSpectrumGradient(bankedDays);
+      dashboard.style.background = hslBreathingRoomGradient(breathingRoom);
     }
 
     function updateDashboard() {
@@ -435,14 +460,18 @@
         `Counting days from ${formatLocalDate(windowStart)} to today`;
 
       let msg = '';
+      const room = theme.breathingRoom;
       if (theme.zone === 'fail') {
-        msg = `⚠️ Not enough time left on your visa (${theme.visaDaysLeft} days) to bank the ${theme.daysNeeded} days still required.`;
+        msg = `⚠️ Impossible to reach 730 — only ${theme.visaDaysLeft} days left on your visa but ${theme.daysNeeded} more days in Australia are still required.`;
         $('progress-fill').className = 'progress-fill h-full rounded-full bg-slate-700';
       } else if (theme.zone === 'safe') {
-        msg = '✅ Congratulations — you have met the 730-day requirement!';
+        msg = '✅ 730-day requirement met! You have comfortable breathing room on your visa.';
         $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
+      } else if (room === null) {
+        msg = '📅 Set your visa end date below to see your safety buffer and dashboard colour.';
+        $('progress-fill').className = 'progress-fill h-full rounded-full bg-slate-400';
       } else {
-        msg = `📊 ${banked} of 730 days banked — keep building time in Australia.`;
+        msg = `🛡️ Safety buffer: ${room} day${room === 1 ? '' : 's'} of breathing room (${theme.visaDaysLeft} on visa − ${theme.daysNeeded} still needed in Australia).`;
         $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
       }
       $('status-message').textContent = msg;
