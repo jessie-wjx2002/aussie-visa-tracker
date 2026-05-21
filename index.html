@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Australian Visa 730-Day Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg-from: #1a202c;
+      --bg-to: #2d3748;
+      --bg-solid: transparent;
+      --bg-mode: gradient;
+    }
+
+    html, body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      transition: background 1.2s ease, background-color 1.2s ease;
+    }
+
+    body.theme-gradient {
+      background: linear-gradient(135deg, var(--bg-from) 0%, var(--bg-to) 100%);
+    }
+
+    body.theme-solid {
+      background: var(--bg-solid);
+    }
+
+    body.theme-fail {
+      background: linear-gradient(160deg, #1a202c 0%, #2d3748 100%);
+    }
+
+    #location-toggle[aria-pressed="true"] .toggle-thumb {
+      transform: translateX(2.25rem);
+    }
+    @media (min-width: 640px) {
+      #location-toggle[aria-pressed="true"] .toggle-thumb {
+        transform: translateX(3rem);
+      }
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+    }
+
+    .toggle-track {
+      transition: background 0.35s ease, transform 0.2s ease;
+    }
+
+    .toggle-thumb {
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .progress-fill {
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1), background 0.6s ease;
+    }
+
+    details > summary {
+      list-style: none;
+    }
+    details > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body, .progress-fill, .toggle-track, .toggle-thumb {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="theme-fail min-h-screen text-slate-900 antialiased">
+
+  <!--
+  ═══════════════════════════════════════════════════════════════════════════
+  SUPABASE SETUP (run once in SQL Editor)
+  ═══════════════════════════════════════════════════════════════════════════
+
+  create table public.travel_logs (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users(id) on delete cascade,
+    arrival_date date not null,
+    departure_date date,
+    created_at timestamptz default now()
+  );
+
+  create table public.travel_notes (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users(id) on delete cascade unique,
+    content text default '',
+    updated_at timestamptz default now()
+  );
+
+  alter table public.travel_logs enable row level security;
+  alter table public.travel_notes enable row level security;
+
+  create policy "Users manage own travel_logs" on public.travel_logs
+    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+  create policy "Users manage own travel_notes" on public.travel_notes
+    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  ═══════════════════════════════════════════════════════════════════════════
+  -->
+
+  <div id="app" class="mx-auto max-w-2xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
+
+    <!-- Auth -->
+    <section id="auth-section" class="glass rounded-3xl p-8 sm:p-10">
+      <div class="mb-8 text-center">
+        <p class="text-5xl mb-3" aria-hidden="true">🇦🇺</p>
+        <h1 class="text-3xl sm:text-4xl font-bold text-slate-800 leading-tight">
+          Visa 730-Day Tracker
+        </h1>
+        <p class="mt-3 text-xl text-slate-600 leading-relaxed">
+          Subclass 155 · Rolling 5-year residence
+        </p>
+      </div>
+
+      <div id="auth-message" class="hidden mb-4 rounded-2xl bg-red-50 px-5 py-4 text-lg text-red-700" role="alert"></div>
+
+      <form id="auth-form" class="space-y-5">
+        <div>
+          <label for="email" class="block text-xl font-semibold text-slate-700 mb-2">Email</label>
+          <input id="email" type="email" required autocomplete="email"
+            class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200" />
+        </div>
+        <div>
+          <label for="password" class="block text-xl font-semibold text-slate-700 mb-2">Password</label>
+          <input id="password" type="password" required minlength="6" autocomplete="current-password"
+            class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200" />
+        </div>
+        <button type="submit" id="auth-submit"
+          class="w-full rounded-2xl bg-emerald-600 py-5 text-2xl font-bold text-white shadow-lg hover:bg-emerald-700 active:scale-[0.98] transition">
+          Sign In
+        </button>
+      </form>
+
+      <p class="mt-6 text-center text-lg text-slate-600">
+        <button type="button" id="auth-toggle-mode" class="font-semibold text-emerald-700 underline underline-offset-4 hover:text-emerald-900">
+          Need an account? Sign up
+        </button>
+      </p>
+    </section>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="hidden space-y-6">
+
+      <header class="flex items-center justify-between gap-3">
+        <p class="text-lg text-white/90 font-medium truncate" id="user-email-display"></p>
+        <button type="button" id="sign-out-btn"
+          class="shrink-0 rounded-xl bg-white/20 px-4 py-2 text-lg font-semibold text-white backdrop-blur hover:bg-white/30 transition">
+          Sign out
+        </button>
+      </header>
+
+      <!-- Big Toggle -->
+      <button type="button" id="location-toggle" aria-pressed="false"
+        class="toggle-track w-full rounded-3xl p-1 shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+        <div class="glass rounded-[1.35rem] px-5 py-6 sm:py-8 flex items-center justify-between gap-4">
+          <span id="toggle-label" class="text-2xl sm:text-3xl font-bold text-slate-800 text-left leading-snug">
+            ✈️ I am OUTSIDE Australia
+          </span>
+          <div class="relative shrink-0 w-20 h-11 sm:w-24 sm:h-12 rounded-full bg-slate-300" aria-hidden="true">
+            <div id="toggle-thumb" class="toggle-thumb absolute top-1 left-1 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white shadow-md"></div>
+          </div>
+        </div>
+      </button>
+
+      <!-- Primary Metrics -->
+      <section class="glass rounded-3xl p-6 sm:p-8">
+        <div class="grid grid-cols-2 gap-6 mb-8">
+          <div class="text-center">
+            <p class="text-xl sm:text-2xl font-semibold text-slate-600 mb-1">Days Banked</p>
+            <p id="days-banked" class="text-6xl sm:text-7xl font-black text-emerald-700 tabular-nums leading-none">0</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xl sm:text-2xl font-semibold text-slate-600 mb-1">Still Needed</p>
+            <p id="days-needed" class="text-6xl sm:text-7xl font-black text-slate-800 tabular-nums leading-none">730</p>
+          </div>
+        </div>
+
+        <div class="mb-3 flex justify-between text-lg font-semibold text-slate-600">
+          <span>Progress to 730 days</span>
+          <span id="progress-percent">0%</span>
+        </div>
+        <div class="h-6 sm:h-8 rounded-full bg-slate-200 overflow-hidden" role="progressbar"
+          aria-valuemin="0" aria-valuemax="730" aria-valuenow="0" id="progress-bar-container">
+          <div id="progress-fill" class="progress-fill h-full rounded-full bg-emerald-500" style="width: 0%"></div>
+        </div>
+
+        <p id="status-message" class="mt-6 text-xl sm:text-2xl font-semibold text-center text-slate-700 leading-relaxed"></p>
+        <p id="window-hint" class="mt-2 text-lg text-center text-slate-500"></p>
+      </section>
+
+      <!-- Visa cycle config -->
+      <section class="glass rounded-3xl p-6 sm:p-8">
+        <label for="visa-expiry" class="block text-xl sm:text-2xl font-bold text-slate-800 mb-3">
+          Current visa cycle ends
+        </label>
+        <input id="visa-expiry" type="date"
+          class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl focus:border-emerald-500 focus:outline-none" />
+        <p class="mt-3 text-lg text-slate-600">Used to detect if reaching 730 days is still mathematically possible.</p>
+      </section>
+
+      <!-- Historical Flight Logger -->
+      <details class="glass rounded-3xl overflow-hidden group" open>
+        <summary class="cursor-pointer px-6 py-5 sm:px-8 sm:py-6 flex items-center justify-between select-none">
+          <span class="text-2xl sm:text-3xl font-bold text-slate-800">✈️ Trip History (5 years)</span>
+          <span class="text-3xl text-slate-400 group-open:rotate-180 transition-transform" aria-hidden="true">▼</span>
+        </summary>
+
+        <div class="px-6 pb-6 sm:px-8 sm:pb-8 border-t border-slate-100 pt-6 space-y-5">
+          <form id="trip-form" class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="arrival-date" class="block text-xl font-semibold text-slate-700 mb-2">Date Arrived</label>
+              <input id="arrival-date" type="date" required
+                class="w-full rounded-2xl border-2 border-slate-200 px-4 py-4 text-xl" />
+            </div>
+            <div>
+              <label for="departure-date" class="block text-xl font-semibold text-slate-700 mb-2">Date Departed</label>
+              <input id="departure-date" type="date"
+                class="w-full rounded-2xl border-2 border-slate-200 px-4 py-4 text-xl" />
+              <p class="mt-1 text-base text-slate-500">Leave blank if still in Australia</p>
+            </div>
+            <button type="submit"
+              class="sm:col-span-2 rounded-2xl bg-slate-800 py-4 text-2xl font-bold text-white hover:bg-slate-900 active:scale-[0.98] transition">
+              + Add Trip
+            </button>
+          </form>
+
+          <ul id="trip-list" class="max-h-72 overflow-y-auto space-y-3 pr-1" aria-live="polite"></ul>
+          <p id="trip-empty" class="hidden text-xl text-center text-slate-500 py-4">No trips logged yet.</p>
+        </div>
+      </details>
+
+      <!-- Future Travel Notepad -->
+      <section class="glass rounded-3xl p-6 sm:p-8">
+        <div class="flex items-center justify-between mb-4 gap-3">
+          <h2 class="text-2xl sm:text-3xl font-bold text-slate-800">📝 Future Plans Notepad</h2>
+          <span id="notes-status" class="text-lg text-slate-500 shrink-0"></span>
+        </div>
+        <textarea id="future-notes" rows="6" placeholder="Flight ideas, prices, itineraries…"
+          class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl leading-relaxed resize-y min-h-[10rem] focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"></textarea>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════════════
+    // CONFIGURATION — paste your Supabase project credentials here
+    // ═══════════════════════════════════════════════════════════════════════
+    const SUPABASE_URL = 'https://lcjgboslynvslnaejebj.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxjamdib3NseW52c2xuYWVqZWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzMjMxNDQsImV4cCI6MjA5NDg5OTE0NH0.jop_fBK4rnVskljiRJqTm8IodSjHyOkvxs-ST5sp3Xs';
+
+    /** End of current visa validity cycle (YYYY-MM-DD). Adjust as needed. */
+    let VISA_CYCLE_END = localStorage.getItem('visa_cycle_end') || '';
+
+    const TARGET_DAYS = 730;
+    const WINDOW_YEARS = 5;
+    const CRITICAL_MAX = 500;
+    const PROGRESS_MIN = 501;
+    const PROGRESS_MAX = 729;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Supabase client
+    // ═══════════════════════════════════════════════════════════════════════
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentUser = null;
+    let travelLogs = [];
+    let openLogId = null;
+    let isInAustralia = false;
+    let notesSaveTimer = null;
+    let notesRowId = null;
+    let authMode = 'signin';
+
+    const $ = (id) => document.getElementById(id);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Date utilities (local calendar dates, no UTC drift)
+    // ═══════════════════════════════════════════════════════════════════════
+    function parseLocalDate(str) {
+      if (!str) return null;
+      const [y, m, d] = str.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+
+    function formatLocalDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function todayLocal() {
+      const t = new Date();
+      return new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    }
+
+    function addYears(date, years) {
+      const d = new Date(date);
+      d.setFullYear(d.getFullYear() - years);
+      return d;
+    }
+
+    /** Inclusive calendar days between two local dates */
+    function inclusiveDays(start, end) {
+      const ms = end.getTime() - start.getTime();
+      return Math.floor(ms / 86400000) + 1;
+    }
+
+    function daysUntil(endDateStr) {
+      if (!endDateStr) return Infinity;
+      const end = parseLocalDate(endDateStr);
+      const today = todayLocal();
+      if (end < today) return 0;
+      return inclusiveDays(today, end) - 1;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Rolling 5-year window math
+    // ═══════════════════════════════════════════════════════════════════════
+    function getWindowStart() {
+      return addYears(todayLocal(), WINDOW_YEARS);
+    }
+
+    function calculateBankedDays(logs) {
+      const today = todayLocal();
+      const windowStart = getWindowStart();
+      let total = 0;
+
+      const sorted = [...logs].sort((a, b) =>
+        parseLocalDate(a.arrival_date) - parseLocalDate(b.arrival_date)
+      );
+
+      for (const log of sorted) {
+        const arrival = parseLocalDate(log.arrival_date);
+        if (!arrival || arrival > today) continue;
+
+        let departure = log.departure_date
+          ? parseLocalDate(log.departure_date)
+          : today;
+
+        if (departure > today) departure = today;
+        if (departure < arrival) continue;
+
+        const effectiveStart = arrival < windowStart ? windowStart : arrival;
+        const effectiveEnd = departure;
+
+        if (effectiveStart > effectiveEnd) continue;
+        if (effectiveEnd < windowStart) continue;
+
+        total += inclusiveDays(effectiveStart, effectiveEnd);
+      }
+
+      return Math.min(total, TARGET_DAYS);
+    }
+
+    function getThemeState(bankedDays) {
+      const daysNeeded = Math.max(0, TARGET_DAYS - bankedDays);
+      const visaDaysLeft = daysUntil(VISA_CYCLE_END);
+
+      if (VISA_CYCLE_END && daysNeeded > visaDaysLeft) {
+        return { zone: 'fail', daysNeeded, visaDaysLeft };
+      }
+      if (bankedDays >= TARGET_DAYS) {
+        return { zone: 'safe', daysNeeded: 0, visaDaysLeft };
+      }
+      if (bankedDays <= CRITICAL_MAX) {
+        return { zone: 'critical', daysNeeded, visaDaysLeft };
+      }
+      if (bankedDays >= PROGRESS_MIN && bankedDays <= PROGRESS_MAX) {
+        const t = (bankedDays - PROGRESS_MIN) / (PROGRESS_MAX - PROGRESS_MIN);
+        return { zone: 'progress', progress: t, daysNeeded, visaDaysLeft };
+      }
+      return { zone: 'critical', daysNeeded, visaDaysLeft };
+    }
+
+    function applyTheme(state) {
+      const body = document.body;
+      body.classList.remove('theme-fail', 'theme-solid', 'theme-gradient');
+
+      if (state.zone === 'fail') {
+        body.classList.add('theme-fail');
+        return;
+      }
+
+      if (state.zone === 'safe') {
+        body.classList.add('theme-solid');
+        body.style.setProperty('--bg-solid', '#48bb78');
+        return;
+      }
+
+      if (state.zone === 'critical') {
+        body.classList.add('theme-solid');
+        body.style.setProperty('--bg-solid', '#e53e3e');
+        return;
+      }
+
+      if (state.zone === 'progress') {
+        const t = state.progress ?? 0;
+        const from = interpolateColor('#ed8936', '#9acd32', t);
+        const to = interpolateColor('#f6ad55', '#7cb342', t);
+        body.classList.add('theme-gradient');
+        body.style.setProperty('--bg-from', from);
+        body.style.setProperty('--bg-to', to);
+      }
+    }
+
+    function interpolateColor(hex1, hex2, t) {
+      const r1 = parseInt(hex1.slice(1, 3), 16);
+      const g1 = parseInt(hex1.slice(3, 5), 16);
+      const b1 = parseInt(hex1.slice(5, 7), 16);
+      const r2 = parseInt(hex2.slice(1, 3), 16);
+      const g2 = parseInt(hex2.slice(3, 5), 16);
+      const b2 = parseInt(hex2.slice(5, 7), 16);
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const b = Math.round(b1 + (b2 - b1) * t);
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    }
+
+    function updateDashboard() {
+      const banked = calculateBankedDays(travelLogs);
+      const needed = Math.max(0, TARGET_DAYS - banked);
+      const pct = Math.min(100, Math.round((banked / TARGET_DAYS) * 100));
+      const theme = getThemeState(banked);
+
+      applyTheme(theme);
+
+      $('days-banked').textContent = banked;
+      $('days-needed').textContent = needed;
+      $('progress-percent').textContent = `${pct}%`;
+      $('progress-fill').style.width = `${pct}%`;
+      $('progress-bar-container').setAttribute('aria-valuenow', banked);
+
+      const windowStart = getWindowStart();
+      $('window-hint').textContent =
+        `Counting days from ${formatLocalDate(windowStart)} to today`;
+
+      let msg = '';
+      if (theme.zone === 'fail') {
+        msg = `⚠️ Not enough time left on your visa (${theme.visaDaysLeft} days) to bank the ${theme.daysNeeded} days still required.`;
+        $('progress-fill').className = 'progress-fill h-full rounded-full bg-slate-700';
+      } else if (theme.zone === 'safe') {
+        msg = '✅ Congratulations — you have met the 730-day requirement!';
+        $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
+      } else if (theme.zone === 'critical') {
+        msg = `🔴 Critical — only ${banked} days banked. Keep planning time in Australia.`;
+        $('progress-fill').className = 'progress-fill h-full rounded-full bg-red-500';
+      } else {
+        msg = `🟡 Making progress — ${banked} of 730 days banked.`;
+        $('progress-fill').className = 'progress-fill h-full rounded-full bg-amber-500';
+      }
+      $('status-message').textContent = msg;
+
+      const bankedEl = $('days-banked');
+      if (theme.zone === 'safe') bankedEl.className = 'text-6xl sm:text-7xl font-black text-emerald-700 tabular-nums leading-none';
+      else if (theme.zone === 'fail') bankedEl.className = 'text-6xl sm:text-7xl font-black text-slate-700 tabular-nums leading-none';
+      else if (theme.zone === 'critical') bankedEl.className = 'text-6xl sm:text-7xl font-black text-red-600 tabular-nums leading-none';
+      else bankedEl.className = 'text-6xl sm:text-7xl font-black text-amber-600 tabular-nums leading-none';
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Toggle UI
+    // ═══════════════════════════════════════════════════════════════════════
+    function syncToggleUI() {
+      const label = $('toggle-label');
+      const track = $('location-toggle').querySelector('.relative');
+
+      if (isInAustralia) {
+        label.textContent = '📍 I am currently IN Australia';
+        $('location-toggle').setAttribute('aria-pressed', 'true');
+        track.classList.remove('bg-slate-300');
+        track.classList.add('bg-emerald-500');
+      } else {
+        label.textContent = '✈️ I am OUTSIDE Australia';
+        $('location-toggle').setAttribute('aria-pressed', 'false');
+        track.classList.add('bg-slate-300');
+        track.classList.remove('bg-emerald-500');
+      }
+    }
+
+    function detectOpenLog() {
+      const open = travelLogs.find((l) => !l.departure_date);
+      openLogId = open ? open.id : null;
+      isInAustralia = !!open;
+      syncToggleUI();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Supabase data layer
+    // ═══════════════════════════════════════════════════════════════════════
+    async function loadTravelLogs() {
+      const { data, error } = await supabaseClient
+        .from('travel_logs')
+        .select('*')
+        .order('arrival_date', { ascending: false });
+
+      if (error) throw error;
+      travelLogs = data || [];
+      detectOpenLog();
+      renderTripList();
+      updateDashboard();
+    }
+
+    async function loadNotes() {
+      const { data, error } = await supabaseClient
+        .from('travel_notes')
+        .select('*')
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        notesRowId = data.id;
+        $('future-notes').value = data.content || '';
+      } else {
+        const { data: created, error: insertErr } = await supabaseClient
+          .from('travel_notes')
+          .insert({ user_id: currentUser.id, content: '' })
+          .select()
+          .single();
+
+        if (insertErr) throw insertErr;
+        notesRowId = created.id;
+        $('future-notes').value = '';
+      }
+    }
+
+    async function saveNotes(content) {
+      if (!notesRowId) return;
+      $('notes-status').textContent = 'Saving…';
+      const { error } = await supabaseClient
+        .from('travel_notes')
+        .update({ content, updated_at: new Date().toISOString() })
+        .eq('id', notesRowId);
+
+      $('notes-status').textContent = error ? 'Save failed' : 'Saved ✓';
+      if (!error) setTimeout(() => { $('notes-status').textContent = ''; }, 2000);
+    }
+
+    async function toggleLocation() {
+      const today = formatLocalDate(todayLocal());
+
+      if (isInAustralia && openLogId) {
+        const { error } = await supabaseClient
+          .from('travel_logs')
+          .update({ departure_date: today })
+          .eq('id', openLogId);
+        if (error) throw error;
+      } else if (!isInAustralia) {
+        const { error } = await supabaseClient
+          .from('travel_logs')
+          .insert({
+            user_id: currentUser.id,
+            arrival_date: today,
+            departure_date: null,
+          });
+        if (error) throw error;
+      }
+
+      await loadTravelLogs();
+    }
+
+    async function addTrip(arrival, departure) {
+      if (!departure && travelLogs.some((l) => !l.departure_date)) {
+        throw new Error(
+          'You already have an open stay in Australia. Close it with the toggle or enter a departure date.'
+        );
+      }
+      const { error } = await supabaseClient.from('travel_logs').insert({
+        user_id: currentUser.id,
+        arrival_date: arrival,
+        departure_date: departure || null,
+      });
+      if (error) throw error;
+      await loadTravelLogs();
+    }
+
+    async function deleteTrip(id) {
+      if (!confirm('Delete this trip record?')) return;
+      const { error } = await supabaseClient.from('travel_logs').delete().eq('id', id);
+      if (error) throw error;
+      await loadTravelLogs();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Trip list rendering
+    // ═══════════════════════════════════════════════════════════════════════
+    function renderTripList() {
+      const list = $('trip-list');
+      const empty = $('trip-empty');
+      const windowStart = getWindowStart();
+      const today = todayLocal();
+
+      const visible = travelLogs.filter((log) => {
+        const arrival = parseLocalDate(log.arrival_date);
+        const departure = log.departure_date
+          ? parseLocalDate(log.departure_date)
+          : today;
+        return departure >= windowStart && arrival <= today;
+      });
+
+      list.innerHTML = '';
+
+      if (visible.length === 0) {
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      for (const log of visible) {
+        const li = document.createElement('li');
+        li.className =
+          'flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-4 border border-slate-100';
+
+        const depLabel = log.departure_date
+          ? formatDisplayDate(log.departure_date)
+          : 'Present';
+
+        li.innerHTML = `
+          <div class="min-w-0 flex-1">
+            <p class="text-xl font-bold text-slate-800 truncate">
+              ${formatDisplayDate(log.arrival_date)} → ${depLabel}
+            </p>
+            ${!log.departure_date ? '<p class="text-base text-emerald-700 font-semibold">Currently in Australia</p>' : ''}
+          </div>
+          <button type="button" aria-label="Delete trip"
+            class="shrink-0 rounded-xl p-3 text-2xl hover:bg-red-100 active:scale-95 transition"
+            data-delete="${log.id}">🗑️</button>
+        `;
+
+        li.querySelector('[data-delete]').addEventListener('click', () =>
+          deleteTrip(log.id)
+        );
+        list.appendChild(li);
+      }
+    }
+
+    function formatDisplayDate(str) {
+      const d = parseLocalDate(str);
+      return d.toLocaleDateString('en-AU', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Auth UI
+    // ═══════════════════════════════════════════════════════════════════════
+    function showAuth() {
+      $('auth-section').classList.remove('hidden');
+      $('dashboard').classList.add('hidden');
+    }
+
+    function showDashboard() {
+      $('auth-section').classList.add('hidden');
+      $('dashboard').classList.remove('hidden');
+      $('user-email-display').textContent = currentUser?.email || '';
+    }
+
+    function showAuthError(msg) {
+      const el = $('auth-message');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function clearAuthError() {
+      $('auth-message').classList.add('hidden');
+    }
+
+    async function initSession() {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (session?.user) {
+        currentUser = session.user;
+        showDashboard();
+        if (VISA_CYCLE_END) $('visa-expiry').value = VISA_CYCLE_END;
+        await Promise.all([loadTravelLogs(), loadNotes()]);
+      } else {
+        showAuth();
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Event listeners
+    // ═══════════════════════════════════════════════════════════════════════
+    $('auth-toggle-mode').addEventListener('click', () => {
+      authMode = authMode === 'signin' ? 'signup' : 'signin';
+      $('auth-submit').textContent = authMode === 'signin' ? 'Sign In' : 'Create Account';
+      $('auth-toggle-mode').textContent =
+        authMode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in';
+      clearAuthError();
+    });
+
+    $('auth-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAuthError();
+      const email = $('email').value.trim();
+      const password = $('password').value;
+
+      try {
+        if (authMode === 'signup') {
+          const { error } = await supabaseClient.auth.signUp({ email, password });
+          if (error) throw error;
+          showAuthError('Check your email to confirm your account, then sign in.');
+        } else {
+          const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          currentUser = data.user;
+          showDashboard();
+          await Promise.all([loadTravelLogs(), loadNotes()]);
+        }
+      } catch (err) {
+        showAuthError(err.message || 'Authentication failed.');
+      }
+    });
+
+    $('sign-out-btn').addEventListener('click', async () => {
+      await supabaseClient.auth.signOut();
+      currentUser = null;
+      travelLogs = [];
+      showAuth();
+    });
+
+    $('location-toggle').addEventListener('click', async () => {
+      try {
+        await toggleLocation();
+      } catch (err) {
+        alert(err.message || 'Could not update location.');
+      }
+    });
+
+    $('trip-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const arrival = $('arrival-date').value;
+      const departure = $('departure-date').value;
+
+      if (!arrival) return;
+
+      if (departure && departure < arrival) {
+        alert('Departure date must be on or after arrival date.');
+        return;
+      }
+
+      try {
+        await addTrip(arrival, departure || null);
+        $('arrival-date').value = '';
+        $('departure-date').value = '';
+      } catch (err) {
+        alert(err.message || 'Could not add trip.');
+      }
+    });
+
+    $('future-notes').addEventListener('input', () => {
+      $('notes-status').textContent = '…';
+      clearTimeout(notesSaveTimer);
+      notesSaveTimer = setTimeout(() => {
+        saveNotes($('future-notes').value);
+      }, 1000);
+    });
+
+    $('visa-expiry').addEventListener('change', (e) => {
+      VISA_CYCLE_END = e.target.value;
+      localStorage.setItem('visa_cycle_end', VISA_CYCLE_END);
+      updateDashboard();
+    });
+
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        currentUser = session.user;
+        showDashboard();
+        if (VISA_CYCLE_END) $('visa-expiry').value = VISA_CYCLE_END;
+        await Promise.all([loadTravelLogs(), loadNotes()]);
+      }
+      if (event === 'SIGNED_OUT') {
+        currentUser = null;
+        showAuth();
+      }
+    });
+
+    // Boot
+    if (VISA_CYCLE_END) $('visa-expiry').value = VISA_CYCLE_END;
+    initSession().catch((err) => {
+      console.error(err);
+      if (SUPABASE_URL.includes('YOUR_')) {
+        showAuth();
+        showAuthError('Please set SUPABASE_URL and SUPABASE_ANON_KEY at the top of the script.');
+      }
+    });
+  </script>
+</body>
+</html>
