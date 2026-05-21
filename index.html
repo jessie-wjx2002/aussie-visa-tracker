@@ -32,8 +32,8 @@
       }
     }
 
-    #dashboard.dashboard-failed {
-      background: #6b7280 !important;
+    #dashboard.dashboard-safe-default {
+      background: #D1D5DB;
     }
 
     #location-toggle[aria-pressed="true"] .toggle-thumb {
@@ -269,8 +269,8 @@
     const WINDOW_YEARS = 5;
     /** Breathing room at or above this value = full green on the dashboard. */
     const BREATHING_ROOM_MAX = 365;
-    const FAIL_GREY = '#6b7280';
-    const NO_VISA_BG = '#e2e8f0';
+    /** Fallback when data is missing, invalid, unreachable, or gradient build fails. */
+    const SAFE_DEFAULT_BG = '#D1D5DB';
 
     // ═══════════════════════════════════════════════════════════════════════
     // Supabase client
@@ -291,9 +291,28 @@
     // Date utilities (local calendar dates, no UTC drift)
     // ═══════════════════════════════════════════════════════════════════════
     function parseLocalDate(str) {
-      if (!str) return null;
-      const [y, m, d] = str.split('-').map(Number);
-      return new Date(y, m - 1, d);
+      if (!str || typeof str !== 'string') return null;
+      const parts = str.trim().split('-');
+      if (parts.length !== 3) return null;
+      const [y, m, d] = parts.map(Number);
+      if (![y, m, d].every(Number.isFinite)) return null;
+      const date = new Date(y, m - 1, d);
+      if (Number.isNaN(date.getTime())) return null;
+      return date;
+    }
+
+    function isNonEmptyString(value) {
+      return typeof value === 'string' && value.trim().length > 0;
+    }
+
+    function isValidDateString(str) {
+      return isNonEmptyString(str) && parseLocalDate(str) !== null;
+    }
+
+    function safeFiniteNumber(value, fallback = null) {
+      if (value === null || value === undefined) return fallback;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : fallback;
     }
 
     function formatLocalDate(date) {
@@ -321,11 +340,21 @@
     }
 
     function daysUntil(endDateStr) {
-      if (!endDateStr) return Infinity;
-      const end = parseLocalDate(endDateStr);
+      const safe = safeVisaDaysLeft(endDateStr);
+      return safe === null ? Infinity : safe;
+    }
+
+    /** Visa days remaining; null if date missing or invalid. */
+    function safeVisaDaysLeft(endDateStr) {
+      if (!isValidDateString(endDateStr)) return null;
+      const end = parseLocalDate(endDateStr.trim());
       const today = todayLocal();
+      if (!end || !today || Number.isNaN(end.getTime()) || Number.isNaN(today.getTime())) {
+        return null;
+      }
       if (end < today) return 0;
-      return inclusiveDays(today, end) - 1;
+      const days = inclusiveDays(today, end) - 1;
+      return safeFiniteNumber(days, null);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -364,24 +393,35 @@
         total += inclusiveDays(effectiveStart, effectiveEnd);
       }
 
-      return Math.min(total, TARGET_DAYS);
+      const result = safeFiniteNumber(Math.min(total, TARGET_DAYS), 0);
+      return result === null ? 0 : result;
     }
 
     /** Days still required in Australia to reach the 730-day target. */
     function daysStillNeeded(bankedDays) {
-      return Math.max(0, TARGET_DAYS - bankedDays);
+      const banked = safeFiniteNumber(bankedDays, 0);
+      if (banked === null) return 0;
+      return Math.max(0, TARGET_DAYS - banked);
     }
 
     /**
      * Safety buffer: visa days remaining minus days still needed in Australia.
-     * Positive = days she can safely be outside Australia while still making 730.
+     * Returns null if any input is missing or not a finite number.
      */
     function calculateBreathingRoom(bankedDays) {
-      if (!VISA_CYCLE_END) return null;
-      const visaDaysLeft = daysUntil(VISA_CYCLE_END);
-      const needed = daysStillNeeded(bankedDays);
-      if (bankedDays >= TARGET_DAYS) return visaDaysLeft;
-      return visaDaysLeft - needed;
+      const banked = safeFiniteNumber(bankedDays, null);
+      if (banked === null) return null;
+      if (!isValidDateString(VISA_CYCLE_END)) return null;
+
+      const visaDaysLeft = safeVisaDaysLeft(VISA_CYCLE_END);
+      const needed = safeFiniteNumber(daysStillNeeded(banked), null);
+      if (visaDaysLeft === null || needed === null) return null;
+
+      if (banked >= TARGET_DAYS) {
+        return safeFiniteNumber(visaDaysLeft, null);
+      }
+
+      return safeFiniteNumber(visaDaysLeft - needed, null);
     }
 
     function isRequirementFailed(bankedDays) {
@@ -391,54 +431,106 @@
 
     function getStatusState(bankedDays) {
       const daysNeeded = daysStillNeeded(bankedDays);
-      const visaDaysLeft = daysUntil(VISA_CYCLE_END);
+      const visaDaysLeft = safeVisaDaysLeft(VISA_CYCLE_END);
       const breathingRoom = calculateBreathingRoom(bankedDays);
+      const displayVisaLeft = visaDaysLeft === null ? '—' : visaDaysLeft;
 
       if (isRequirementFailed(bankedDays)) {
-        return { zone: 'fail', daysNeeded, visaDaysLeft, breathingRoom };
+        return { zone: 'fail', daysNeeded, visaDaysLeft: displayVisaLeft, breathingRoom };
       }
-      if (bankedDays >= TARGET_DAYS) {
-        return { zone: 'safe', daysNeeded: 0, visaDaysLeft, breathingRoom };
+      if (safeFiniteNumber(bankedDays, 0) >= TARGET_DAYS) {
+        return { zone: 'safe', daysNeeded: 0, visaDaysLeft: displayVisaLeft, breathingRoom };
       }
-      return { zone: 'progress', daysNeeded, visaDaysLeft, breathingRoom };
+      return { zone: 'progress', daysNeeded, visaDaysLeft: displayVisaLeft, breathingRoom };
     }
 
     /**
-     * HSL spectrum by breathing room: 120 green (plenty of buffer) → 60 yellow → 30 orange → 0 red (none left).
+     * Build a validated CSS linear-gradient (green → red as breathing room shrinks).
+     * Returns null if any value would produce invalid CSS.
      */
-    function hslBreathingRoomGradient(breathingRoom) {
-      const clamped = Math.min(Math.max(breathingRoom, 0), BREATHING_ROOM_MAX);
-      const t = clamped / BREATHING_ROOM_MAX;
-      const hueStart = t * 120;
+    function buildHslBreathingRoomGradient(breathingRoom) {
+      const room = safeFiniteNumber(breathingRoom, null);
+      const max = safeFiniteNumber(BREATHING_ROOM_MAX, null);
+      if (room === null || max === null || max <= 0 || room < 0) return null;
+
+      const clamped = Math.min(Math.max(room, 0), max);
+      const t = clamped / max;
+      if (!Number.isFinite(t)) return null;
+
+      const hueStart = Math.round(t * 120);
       const hueEnd = Math.min(120, hueStart + 14);
       const sat = 72;
       const lightStart = 42;
       const lightEnd = 50;
-      const from = `hsl(${hueStart.toFixed(1)}, ${sat}%, ${lightStart}%)`;
-      const to = `hsl(${hueEnd.toFixed(1)}, ${sat}%, ${lightEnd}%)`;
-      return `linear-gradient(145deg, ${from} 0%, ${to} 100%)`;
+
+      const parts = [hueStart, hueEnd, sat, lightStart, lightEnd];
+      if (!parts.every((n) => Number.isFinite(n) && n >= 0)) return null;
+
+      const from = `hsl(${hueStart}, ${sat}%, ${lightStart}%)`;
+      const to = `hsl(${hueEnd}, ${sat}%, ${lightEnd}%)`;
+      const gradient = `linear-gradient(145deg, ${from} 0%, ${to} 100%)`;
+
+      if (gradient.includes('NaN') || gradient.includes('undefined') || !/^linear-gradient\(/i.test(gradient)) {
+        return null;
+      }
+      return gradient;
     }
 
+    /**
+     * Apply dashboard background — always ends on a valid colour (never blank).
+     */
     function applyDashboardBackground(bankedDays) {
       const dashboard = $('dashboard');
-      dashboard.classList.remove('dashboard-failed', 'dashboard-spectrum', 'dashboard-neutral');
+      if (!dashboard) return;
 
-      const breathingRoom = calculateBreathingRoom(bankedDays);
-
-      if (breathingRoom === null) {
-        dashboard.style.background = NO_VISA_BG;
-        dashboard.classList.add('dashboard-neutral');
-        return;
+      function applySafeGrey(reason) {
+        dashboard.classList.remove('dashboard-spectrum', 'dashboard-neutral', 'dashboard-failed');
+        dashboard.classList.add('dashboard-safe-default');
+        dashboard.style.background = SAFE_DEFAULT_BG;
+        dashboard.style.backgroundColor = SAFE_DEFAULT_BG;
+        if (reason === 'unreachable') {
+          dashboard.classList.add('dashboard-failed');
+        }
       }
 
-      if (isRequirementFailed(bankedDays)) {
-        dashboard.style.background = FAIL_GREY;
-        dashboard.classList.add('dashboard-failed');
-        return;
+      function applyGradient(css) {
+        dashboard.classList.remove('dashboard-safe-default', 'dashboard-neutral', 'dashboard-failed');
+        dashboard.classList.add('dashboard-spectrum');
+        dashboard.style.background = css;
+        dashboard.style.backgroundColor = '';
       }
 
-      dashboard.classList.add('dashboard-spectrum');
-      dashboard.style.background = hslBreathingRoomGradient(breathingRoom);
+      try {
+        dashboard.classList.remove(
+          'dashboard-failed',
+          'dashboard-spectrum',
+          'dashboard-neutral',
+          'dashboard-safe-default'
+        );
+
+        const breathingRoom = calculateBreathingRoom(bankedDays);
+
+        if (breathingRoom === null) {
+          applySafeGrey('missing');
+          return;
+        }
+
+        if (breathingRoom < 0) {
+          applySafeGrey('unreachable');
+          return;
+        }
+
+        const gradient = buildHslBreathingRoomGradient(breathingRoom);
+        if (!gradient || typeof gradient !== 'string' || gradient.trim().length === 0) {
+          applySafeGrey('invalid-gradient');
+          return;
+        }
+
+        applyGradient(gradient);
+      } catch (err) {
+        console.error('applyDashboardBackground failed:', err);
+        applySafeGrey('error');
+      }
     }
 
     function updateDashboard() {
