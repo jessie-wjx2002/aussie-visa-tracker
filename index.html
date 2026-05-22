@@ -318,7 +318,7 @@
       return raw.trim();
     }
 
-    function handleVisaExpiryBlur() {
+    async function handleVisaExpiryBlur() {
       if (isCalculating || isSyncingInputs) return;
 
       const raw = $('visa-expiry')?.value?.trim() ?? '';
@@ -327,16 +327,37 @@
         VISA_CYCLE_END = '';
         localStorage.removeItem('visa_cycle_end');
         updateDashboard();
+        
+        // Clear from cloud metadata if the input is wiped
+        if (notesRowId) {
+          await supabaseClient
+            .from('travel_notes')
+            .update({ metadata: {} })
+            .eq('id', notesRowId);
+        }
         return;
       }
 
       if (!isValidDateString(raw)) return;
-
       if (raw === VISA_CYCLE_END) return;
 
       VISA_CYCLE_END = raw;
       localStorage.setItem('visa_cycle_end', VISA_CYCLE_END);
       updateDashboard();
+
+      // Push newly selected calendar date straight to Supabase metadata cell
+      if (notesRowId) {
+        $('notes-status').textContent = 'Saving date…';
+        const { error } = await supabaseClient
+          .from('travel_notes')
+          .update({ 
+            metadata: { visa_expiry: VISA_CYCLE_END } 
+          })
+          .eq('id', notesRowId);
+          
+        $('notes-status').textContent = error ? 'Date save failed' : 'Saved ✓';
+        if (!error) setTimeout(() => { $('notes-status').textContent = ''; }, 2000);
+      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -687,10 +708,18 @@
       if (data) {
         notesRowId = data.id;
         $('future-notes').value = data.content || '';
+        
+        // 🛡️ Fix: Check if cloud metadata has our saved date, restore it, and wake up dashboard
+        if (data.metadata && data.metadata.visa_expiry) {
+          VISA_CYCLE_END = data.metadata.visa_expiry;
+          localStorage.setItem('visa_cycle_end', VISA_CYCLE_END);
+          syncVisaExpiryInputFromState();
+          updateDashboard();
+        }
       } else {
         const { data: created, error: insertErr } = await supabaseClient
           .from('travel_notes')
-          .insert({ user_id: currentUser.id, content: '' })
+          .insert({ user_id: currentUser.id, content: '', metadata: {} })
           .select()
           .single();
 
