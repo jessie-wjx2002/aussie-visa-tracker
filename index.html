@@ -721,14 +721,18 @@
       if (data) {
         notesRowId = data.id;
         const { displayNotes, visaDate } = parseNotesContent(data.content || '');
+        
+        // Update both memory state AND physical inputs on screen safely
+        VISA_CYCLE_END = visaDate || '';
+        
         isSyncingInputs = true;
         try {
           $('future-notes').value = displayNotes;
+          $('visa-expiry').value = VISA_CYCLE_END; // 🟩 FIX: This forces the date onto your screen!
         } finally {
           isSyncingInputs = false;
         }
-        VISA_CYCLE_END = visaDate || '';
-        syncVisaExpiryInputFromState();
+        
         updateDashboard();
       } else {
         const { data: created, error: insertErr } = await supabaseClient
@@ -739,14 +743,17 @@
 
         if (insertErr) throw insertErr;
         notesRowId = created.id;
+        
+        VISA_CYCLE_END = '';
+        
         isSyncingInputs = true;
         try {
           $('future-notes').value = '';
+          $('visa-expiry').value = '';
         } finally {
           isSyncingInputs = false;
         }
-        VISA_CYCLE_END = '';
-        syncVisaExpiryInputFromState();
+        
         updateDashboard();
       }
     }
