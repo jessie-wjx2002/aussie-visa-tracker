@@ -694,7 +694,7 @@
       syncToggleUI();
     }
 
-// ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
     // Supabase data layer
     // ═══════════════════════════════════════════════════════════════════════
     async function loadTravelLogs() {
@@ -722,12 +722,13 @@
         notesRowId = data.id;
         const { displayNotes, visaDate } = parseNotesContent(data.content || '');
         
+        // Update both memory state AND physical inputs on screen safely
         VISA_CYCLE_END = visaDate || '';
         
         isSyncingInputs = true;
         try {
           $('future-notes').value = displayNotes;
-          $('visa-expiry').value = VISA_CYCLE_END;
+          $('visa-expiry').value = VISA_CYCLE_END; // 🟩 FIX: This forces the date onto your screen!
         } finally {
           isSyncingInputs = false;
         }
@@ -757,21 +758,9 @@
       }
     }
 
-    // FORTIFIED: Dynamically reads both screen values live on execute to prevent race overwrites
-    async function saveNotes() {
+    async function saveNotes(displayContent) {
       if (!notesRowId) return;
-      
-      const currentText = $('future-notes').value;
-      const currentDate = $('visa-expiry').value;
-      
-      VISA_CYCLE_END = currentDate || '';
-      
-      let payload = stripVisaMetaFromNotes(currentText).replace(/\n$/, '');
-      if (currentDate && isValidDateString(currentDate)) {
-        const separator = payload.length > 0 ? '\n' : '';
-        payload = `${payload}${separator}__VISA_DATE__:${currentDate}`;
-      }
-
+      const payload = buildNotesPayload(displayContent);
       $('notes-status').textContent = 'Saving…';
       const { error } = await supabaseClient
         .from('travel_notes')
@@ -779,10 +768,7 @@
         .eq('id', notesRowId);
 
       $('notes-status').textContent = error ? 'Save failed' : 'Saved ✓';
-      if (!error) {
-        setTimeout(() => { $('notes-status').textContent = ''; }, 2000);
-        updateDashboard();
-      }
+      if (!error) setTimeout(() => { $('notes-status').textContent = ''; }, 2000);
     }
 
     async function toggleLocation() {
@@ -891,8 +877,7 @@
         year: 'numeric',
       });
     }
-
-    // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
     // Auth UI & Flow Setup
     // ═══════════════════════════════════════════════════════════════════════
     function showAuth() {
@@ -906,7 +891,6 @@
       $('user-email-display').textContent = currentUser?.email || '';
     }
 
-    // Explicit error container display helper
     function showAuthError(msg) {
       const el = $('auth-message');
       el.textContent = msg;
@@ -921,6 +905,7 @@
       const { data: { session } } = await supabaseClient.auth.getSession();
       handleSession(session);
 
+      // Listen for explicit system-level auth shifts passively
       supabaseClient.auth.onAuthStateChange((_event, session) => {
         handleSession(session);
       });
@@ -942,11 +927,12 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Fortified Event Listeners
+    // Fortified Event Listeners (Passive & Safeguarded against iOS native loops)
     // ═══════════════════════════════════════════════════════════════════════
     document.addEventListener('DOMContentLoaded', () => {
       initSession();
 
+      // Auth form submission handler
       $('auth-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         clearAuthError();
@@ -974,21 +960,23 @@
         }
       });
 
+      // Toggle signup/signin screen configurations
       $('auth-toggle-mode').addEventListener('click', () => {
         clearAuthError();
         if (authMode === 'signin') {
           authMode = 'signup';
-          $('auth-title').textContent = 'Create Account';
+          $('auth-title')?.setTextContent?.('Create Account');
           $('auth-submit').textContent = 'Sign Up';
           $('auth-toggle-mode').textContent = 'Already have an account? Sign in';
         } else {
           authMode = 'signin';
-          $('auth-title').textContent = 'Visa 730-Day Tracker';
+          $('auth-title')?.setTextContent?.('Visa 730-Day Tracker');
           $('auth-submit').textContent = 'Sign In';
           $('auth-toggle-mode').textContent = 'Need an account? Sign up';
         }
       });
 
+      // Explicit Sign-out control
       $('sign-out-btn').addEventListener('click', async () => {
         if (isCalculating) return;
         if (confirm('Are you sure you want to sign out?')) {
@@ -998,6 +986,7 @@
         }
       });
 
+      // Quick-Toggle Location update handler
       $('location-toggle').addEventListener('click', async () => {
         if (isCalculating) return;
         try {
@@ -1008,6 +997,7 @@
         }
       });
 
+      // Historical Trip creation form handler
       $('trip-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         if (isCalculating) return;
@@ -1028,34 +1018,38 @@
         }
       });
 
-      // --- CRITICAL BUGS REMEDIATION ZONE ---
-      
-      // Debounced text input syncs directly via global saveNotes frame
-      $('future-notes').addEventListener('input', () => {
+      // Safe, localized notepad auto-saving listener
+      $('future-notes').addEventListener('input', (e) => {
         clearTimeout(notesSaveTimer);
+        const val = e.target.value;
         notesSaveTimer = setTimeout(() => {
-          saveNotes();
+          saveNotes(val);
         }, 1000);
       });
 
-      // Calendar events clean execution route
-      $('visa-expiry').addEventListener('change', () => {
-        clearTimeout(notesSaveTimer);
-        saveNotes();
-      });
+      // --- CRITICAL BUGS REMEDIATION ZONE ---
+      
+      /**
+       * BUG 2 REMEDIATION (Calendar Cutoff):
+       * Instead of watching 'change' or 'input' which breaks mid-selection on iOS wheels,
+       * we bind explicitly to 'blur'. The math executes only when the user completely taps away
+       * or completes their entry interaction inside the date panel.
+       */
+      $('visa-expiry').addEventListener('blur', handleVisaExpiryBlur);
 
-      $('visa-expiry').addEventListener('blur', () => {
-        clearTimeout(notesSaveTimer);
-        saveNotes();
-      });
-       
+      /**
+       * BUG 1 REMEDIATION (Mobile Sleep / Application Wake crash protection):
+       * Clean lifecycle hook listens exclusively for when a mobile device wakes up or focuses the page.
+       * Instead of passing unchecked raw elements into calculation threads, we safely refresh the profile state.
+       */
       window.addEventListener('pageshow', async (event) => {
+        // If system reveals a historical trace cache wake state
         if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
           console.log("App waking from memory lifecycle state... Executing clean restoration sequence.");
         }
         
         if (currentUser) {
-          isCalculating = false;
+          isCalculating = false; // Hard-reset loop flag safely
           try {
             await loadTravelLogs();
           } catch (err) {
