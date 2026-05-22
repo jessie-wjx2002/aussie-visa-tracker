@@ -262,10 +262,8 @@
     const SUPABASE_URL = 'https://lcjgboslynvslnaejebj.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxjamdib3NseW52c2xuYWVqZWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzMjMxNDQsImV4cCI6MjA5NDg5OTE0NH0.jop_fBK4rnVskljiRJqTm8IodSjHyOkvxs-ST5sp3Xs';
 
-    /** End of current visa validity cycle (YYYY-MM-DD). Loaded from Supabase travel_notes. */
-    let VISA_CYCLE_END = '';
-
-    const VISA_META_REGEX = /\n?__VISA_DATE__:(\d{4}-\d{2}-\d{2})\s*$/;
+    /** End of current visa validity cycle (YYYY-MM-DD). Adjust as needed. */
+    let VISA_CYCLE_END = localStorage.getItem('visa_cycle_end') || '';
 
     const TARGET_DAYS = 730;
     const WINDOW_YEARS = 5;
@@ -320,56 +318,24 @@
       return raw.trim();
     }
 
-    function parseNotesContent(raw) {
-      const content = typeof raw === 'string' ? raw : '';
-      let displayNotes = content;
-      let visaDate = '';
-
-      const match = content.match(VISA_META_REGEX);
-      if (match) {
-        visaDate = match[1];
-        displayNotes = content.slice(0, match.index).replace(/\n$/, '');
-      }
-
-      if (visaDate && !isValidDateString(visaDate)) visaDate = '';
-
-      return { displayNotes, visaDate };
-    }
-
-    function stripVisaMetaFromNotes(text) {
-      return (typeof text === 'string' ? text : '')
-        .replace(/\n__VISA_DATE__:\d{4}-\d{2}-\d{2}\s*$/g, '')
-        .replace(/^__VISA_DATE__:\d{4}-\d{2}-\d{2}\s*$/g, '');
-    }
-
-    /** Combine visible notepad text with hidden visa metadata for Supabase storage. */
-    function buildNotesPayload(displayContent) {
-      const body = stripVisaMetaFromNotes(displayContent ?? '').replace(/\n$/, '');
-      if (VISA_CYCLE_END && isValidDateString(VISA_CYCLE_END)) {
-        const separator = body.length > 0 ? '\n' : '';
-        return `${body}${separator}__VISA_DATE__:${VISA_CYCLE_END}`;
-      }
-      return body;
-    }
-
-    async function handleVisaExpiryBlur() {
+    function handleVisaExpiryBlur() {
       if (isCalculating || isSyncingInputs) return;
 
       const raw = $('visa-expiry')?.value?.trim() ?? '';
 
       if (!raw) {
-        if (VISA_CYCLE_END === '') return;
         VISA_CYCLE_END = '';
-        await saveNotes($('future-notes').value);
+        localStorage.removeItem('visa_cycle_end');
         updateDashboard();
         return;
       }
 
       if (!isValidDateString(raw)) return;
+
       if (raw === VISA_CYCLE_END) return;
 
       VISA_CYCLE_END = raw;
-      await saveNotes($('future-notes').value);
+      localStorage.setItem('visa_cycle_end', VISA_CYCLE_END);
       updateDashboard();
     }
 
@@ -720,20 +686,7 @@
 
       if (data) {
         notesRowId = data.id;
-        const { displayNotes, visaDate } = parseNotesContent(data.content || '');
-        
-        // Update both memory state AND physical inputs on screen safely
-        VISA_CYCLE_END = visaDate || '';
-        
-        isSyncingInputs = true;
-        try {
-          $('future-notes').value = displayNotes;
-          $('visa-expiry').value = VISA_CYCLE_END; // 🟩 FIX: This forces the date onto your screen!
-        } finally {
-          isSyncingInputs = false;
-        }
-        
-        updateDashboard();
+        $('future-notes').value = data.content || '';
       } else {
         const { data: created, error: insertErr } = await supabaseClient
           .from('travel_notes')
@@ -743,28 +696,16 @@
 
         if (insertErr) throw insertErr;
         notesRowId = created.id;
-        
-        VISA_CYCLE_END = '';
-        
-        isSyncingInputs = true;
-        try {
-          $('future-notes').value = '';
-          $('visa-expiry').value = '';
-        } finally {
-          isSyncingInputs = false;
-        }
-        
-        updateDashboard();
+        $('future-notes').value = '';
       }
     }
 
-    async function saveNotes(displayContent) {
+    async function saveNotes(content) {
       if (!notesRowId) return;
-      const payload = buildNotesPayload(displayContent);
       $('notes-status').textContent = 'Saving…';
       const { error } = await supabaseClient
         .from('travel_notes')
-        .update({ content: payload, updated_at: new Date().toISOString() })
+        .update({ content, updated_at: new Date().toISOString() })
         .eq('id', notesRowId);
 
       $('notes-status').textContent = error ? 'Save failed' : 'Saved ✓';
@@ -915,6 +856,7 @@
       if (session?.user) {
         currentUser = session.user;
         showDashboard();
+        syncVisaExpiryInputFromState();
         try {
           await Promise.all([loadTravelLogs(), loadNotes()]);
         } catch (err) {
@@ -981,7 +923,7 @@
         if (isCalculating) return;
         if (confirm('Are you sure you want to sign out?')) {
           await supabaseClient.auth.signOut();
-          VISA_CYCLE_END = '';
+          localStorage.clear();
           window.location.reload();
         }
       });
