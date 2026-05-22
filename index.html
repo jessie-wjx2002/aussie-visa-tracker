@@ -209,7 +209,7 @@
         </label>
         <input id="visa-expiry" type="date"
           class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl focus:border-emerald-500 focus:outline-none" />
-        <p class="mt-3 text-lg text-slate-600">Powers your safety buffer: visa days left minus days still needed in Australia.</p>
+        <p class="mt-3 text-lg text-slate-600">Powers your safety buffer: visa days left minus days still needed in Australia. Tap away when you have finished picking the date.</p>
       </section>
 
       <!-- Historical Flight Logger -->
@@ -284,8 +284,60 @@
     let notesSaveTimer = null;
     let notesRowId = null;
     let authMode = 'signin';
+    /** Blocks recursive date/calculation handlers while the dashboard updates. */
+    let isCalculating = false;
+    /** Blocks blur/change handlers while we programmatically set date inputs (load only). */
+    let isSyncingInputs = false;
 
     const $ = (id) => document.getElementById(id);
+
+    function syncVisaExpiryInputFromState() {
+      const el = $('visa-expiry');
+      if (!el) return;
+      isSyncingInputs = true;
+      try {
+        el.value = VISA_CYCLE_END || '';
+      } finally {
+        isSyncingInputs = false;
+      }
+    }
+
+    function clearTripDateInputs() {
+      isSyncingInputs = true;
+      try {
+        $('arrival-date').value = '';
+        $('departure-date').value = '';
+      } finally {
+        isSyncingInputs = false;
+      }
+    }
+
+    function readCompleteDateInput(id) {
+      const raw = $(id)?.value;
+      if (!raw || !isValidDateString(raw)) return null;
+      return raw.trim();
+    }
+
+    function handleVisaExpiryBlur() {
+      if (isCalculating || isSyncingInputs) return;
+
+      const raw = $('visa-expiry')?.value?.trim() ?? '';
+
+      if (!raw) {
+        VISA_CYCLE_END = '';
+        localStorage.removeItem('visa_cycle_end');
+        updateDashboard();
+        return;
+      }
+
+      if (!isValidDateString(raw)) return;
+
+      if (raw === VISA_CYCLE_END) return;
+
+      VISA_CYCLE_END = raw;
+      localStorage.setItem('visa_cycle_end', VISA_CYCLE_END);
+      updateDashboard();
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // Date utilities (local calendar dates, no UTC drift)
@@ -534,44 +586,51 @@
     }
 
     function updateDashboard() {
-      const banked = calculateBankedDays(travelLogs);
-      const needed = Math.max(0, TARGET_DAYS - banked);
-      const pct = Math.min(100, Math.round((banked / TARGET_DAYS) * 100));
-      const theme = getStatusState(banked);
+      if (isCalculating) return;
 
-      applyDashboardBackground(banked);
+      isCalculating = true;
+      try {
+        const banked = calculateBankedDays(travelLogs);
+        const needed = Math.max(0, TARGET_DAYS - banked);
+        const pct = Math.min(100, Math.round((banked / TARGET_DAYS) * 100));
+        const theme = getStatusState(banked);
 
-      $('days-banked').textContent = banked;
-      $('days-needed').textContent = needed;
-      $('progress-percent').textContent = `${pct}%`;
-      $('progress-fill').style.width = `${pct}%`;
-      $('progress-bar-container').setAttribute('aria-valuenow', banked);
+        applyDashboardBackground(banked);
 
-      const windowStart = getWindowStart();
-      $('window-hint').textContent =
-        `Counting days from ${formatLocalDate(windowStart)} to today`;
+        $('days-banked').textContent = banked;
+        $('days-needed').textContent = needed;
+        $('progress-percent').textContent = `${pct}%`;
+        $('progress-fill').style.width = `${pct}%`;
+        $('progress-bar-container').setAttribute('aria-valuenow', banked);
 
-      let msg = '';
-      const room = theme.breathingRoom;
-      if (theme.zone === 'fail') {
-        msg = `⚠️ Impossible to reach 730 — only ${theme.visaDaysLeft} days left on your visa but ${theme.daysNeeded} more days in Australia are still required.`;
-        $('progress-fill').className = 'progress-fill h-full rounded-full bg-slate-700';
-      } else if (theme.zone === 'safe') {
-        msg = '✅ 730-day requirement met! You have comfortable breathing room on your visa.';
-        $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
-      } else if (room === null) {
-        msg = '📅 Set your visa end date below to see your safety buffer and dashboard colour.';
-        $('progress-fill').className = 'progress-fill h-full rounded-full bg-slate-400';
-      } else {
-        msg = `🛡️ Safety buffer: ${room} day${room === 1 ? '' : 's'} of breathing room (${theme.visaDaysLeft} on visa − ${theme.daysNeeded} still needed in Australia).`;
-        $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
+        const windowStart = getWindowStart();
+        $('window-hint').textContent =
+          `Counting days from ${formatLocalDate(windowStart)} to today`;
+
+        let msg = '';
+        const room = theme.breathingRoom;
+        if (theme.zone === 'fail') {
+          msg = `⚠️ Impossible to reach 730 — only ${theme.visaDaysLeft} days left on your visa but ${theme.daysNeeded} more days in Australia are still required.`;
+          $('progress-fill').className = 'progress-fill h-full rounded-full bg-slate-700';
+        } else if (theme.zone === 'safe') {
+          msg = '✅ 730-day requirement met! You have comfortable breathing room on your visa.';
+          $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
+        } else if (room === null) {
+          msg = '📅 Set your visa end date below to see your safety buffer and dashboard colour.';
+          $('progress-fill').className = 'progress-fill h-full rounded-full bg-slate-400';
+        } else {
+          msg = `🛡️ Safety buffer: ${room} day${room === 1 ? '' : 's'} of breathing room (${theme.visaDaysLeft} on visa − ${theme.daysNeeded} still needed in Australia).`;
+          $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
+        }
+        $('status-message').textContent = msg;
+
+        const bankedEl = $('days-banked');
+        if (theme.zone === 'safe') bankedEl.className = 'text-6xl sm:text-7xl font-black text-emerald-700 tabular-nums leading-none';
+        else if (theme.zone === 'fail') bankedEl.className = 'text-6xl sm:text-7xl font-black text-slate-700 tabular-nums leading-none';
+        else bankedEl.className = 'text-6xl sm:text-7xl font-black text-slate-800 tabular-nums leading-none';
+      } finally {
+        isCalculating = false;
       }
-      $('status-message').textContent = msg;
-
-      const bankedEl = $('days-banked');
-      if (theme.zone === 'safe') bankedEl.className = 'text-6xl sm:text-7xl font-black text-emerald-700 tabular-nums leading-none';
-      else if (theme.zone === 'fail') bankedEl.className = 'text-6xl sm:text-7xl font-black text-slate-700 tabular-nums leading-none';
-      else bankedEl.className = 'text-6xl sm:text-7xl font-black text-slate-800 tabular-nums leading-none';
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -789,7 +848,7 @@
       if (session?.user) {
         currentUser = session.user;
         showDashboard();
-        if (VISA_CYCLE_END) $('visa-expiry').value = VISA_CYCLE_END;
+        syncVisaExpiryInputFromState();
         await Promise.all([loadTravelLogs(), loadNotes()]);
       } else {
         showAuth();
@@ -847,10 +906,13 @@
 
     $('trip-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const arrival = $('arrival-date').value;
-      const departure = $('departure-date').value;
+      const arrival = readCompleteDateInput('arrival-date');
+      const departure = readCompleteDateInput('departure-date');
 
-      if (!arrival) return;
+      if (!arrival) {
+        alert('Please select a complete arrival date.');
+        return;
+      }
 
       if (departure && departure < arrival) {
         alert('Departure date must be on or after arrival date.');
@@ -859,8 +921,7 @@
 
       try {
         await addTrip(arrival, departure || null);
-        $('arrival-date').value = '';
-        $('departure-date').value = '';
+        clearTripDateInputs();
       } catch (err) {
         alert(err.message || 'Could not add trip.');
       }
@@ -874,17 +935,13 @@
       }, 1000);
     });
 
-    $('visa-expiry').addEventListener('change', (e) => {
-      VISA_CYCLE_END = e.target.value;
-      localStorage.setItem('visa_cycle_end', VISA_CYCLE_END);
-      updateDashboard();
-    });
+    $('visa-expiry').addEventListener('blur', handleVisaExpiryBlur);
 
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         currentUser = session.user;
         showDashboard();
-        if (VISA_CYCLE_END) $('visa-expiry').value = VISA_CYCLE_END;
+        syncVisaExpiryInputFromState();
         await Promise.all([loadTravelLogs(), loadNotes()]);
       }
       if (event === 'SIGNED_OUT') {
@@ -893,8 +950,8 @@
       }
     });
 
-    // Boot
-    if (VISA_CYCLE_END) $('visa-expiry').value = VISA_CYCLE_END;
+    // Boot — sync saved date without firing calculation handlers
+    syncVisaExpiryInputFromState();
     initSession().catch((err) => {
       console.error(err);
       if (SUPABASE_URL.includes('YOUR_')) {
