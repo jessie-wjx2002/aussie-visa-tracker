@@ -11,11 +11,9 @@
       min-height: 100%;
       margin: 0;
     }
-
     body {
       background: #f1f5f9;
     }
-
     #dashboard {
       transition: background 1.2s ease;
       border-radius: 1.5rem;
@@ -23,7 +21,6 @@
       margin-left: -0.5rem;
       margin-right: -0.5rem;
     }
-
     @media (min-width: 640px) {
       #dashboard {
         padding: 1.25rem;
@@ -31,11 +28,9 @@
         margin-right: -1rem;
       }
     }
-
     #dashboard.dashboard-safe-default {
       background: #D1D5DB;
     }
-
     #location-toggle[aria-pressed="true"] .toggle-thumb {
       transform: translateX(2.25rem);
     }
@@ -44,7 +39,6 @@
         transform: translateX(3rem);
       }
     }
-
     .glass {
       background: rgba(255, 255, 255, 0.92);
       backdrop-filter: blur(18px);
@@ -52,26 +46,21 @@
       border: 1px solid rgba(255, 255, 255, 0.55);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
     }
-
     .toggle-track {
       transition: background 0.35s ease, transform 0.2s ease;
     }
-
     .toggle-thumb {
       transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-
     .progress-fill {
       transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1), background 0.6s ease;
     }
-
     details > summary {
       list-style: none;
     }
     details > summary::-webkit-details-marker {
       display: none;
     }
-
     @media (prefers-reduced-motion: reduce) {
       #dashboard, .progress-fill, .toggle-track, .toggle-thumb {
         transition: none !important;
@@ -81,40 +70,9 @@
 </head>
 <body class="min-h-screen text-slate-900 antialiased">
 
-  <!--
-  ═══════════════════════════════════════════════════════════════════════════
-  SUPABASE SETUP (run once in SQL Editor)
-  ═══════════════════════════════════════════════════════════════════════════
-
-  create table public.travel_logs (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references auth.users(id) on delete cascade,
-    arrival_date date not null,
-    departure_date date,
-    created_at timestamptz default now()
-  );
-
-  create table public.travel_notes (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references auth.users(id) on delete cascade unique,
-    content text default '',
-    updated_at timestamptz default now()
-  );
-
-  alter table public.travel_logs enable row level security;
-  alter table public.travel_notes enable row level security;
-
-  create policy "Users manage own travel_logs" on public.travel_logs
-    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
-  create policy "Users manage own travel_notes" on public.travel_notes
-    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-  ═══════════════════════════════════════════════════════════════════════════
-  -->
-
   <div id="app" class="mx-auto max-w-2xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
 
-    <!-- Auth -->
+    <!-- Auth Section -->
     <section id="auth-section" class="glass rounded-3xl p-8 sm:p-10">
       <div class="mb-8 text-center">
         <p class="text-5xl mb-3" aria-hidden="true">🇦🇺</p>
@@ -152,7 +110,7 @@
       </p>
     </section>
 
-    <!-- Dashboard -->
+    <!-- Dashboard Section -->
     <div id="dashboard" class="hidden space-y-6">
 
       <header class="flex items-center justify-between gap-3">
@@ -163,7 +121,7 @@
         </button>
       </header>
 
-      <!-- Big Toggle -->
+      <!-- Location Toggle -->
       <button type="button" id="location-toggle" aria-pressed="false"
         class="toggle-track w-full rounded-3xl p-1 shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
         <div class="glass rounded-[1.35rem] px-5 py-6 sm:py-8 flex items-center justify-between gap-4">
@@ -202,14 +160,17 @@
         <p id="window-hint" class="mt-2 text-lg text-center text-slate-500"></p>
       </section>
 
-      <!-- Visa cycle config -->
+      <!-- Visa Cycle Configuration (With Status Label) -->
       <section class="glass rounded-3xl p-6 sm:p-8">
-        <label for="visa-expiry" class="block text-xl sm:text-2xl font-bold text-slate-800 mb-3">
-          Current visa cycle ends
-        </label>
+        <div class="flex items-center justify-between mb-3 gap-3">
+          <label for="visa-expiry" class="block text-xl sm:text-2xl font-bold text-slate-800">
+            Current visa cycle ends
+          </label>
+          <span id="visa-save-status" class="text-lg font-semibold text-slate-500 shrink-0"></span>
+        </div>
         <input id="visa-expiry" type="date"
-          class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl focus:border-emerald-500 focus:outline-none" />
-        <p class="mt-3 text-lg text-slate-600">Powers your safety buffer: visa days left minus days still needed in Australia. Tap away when you have finished picking the date.</p>
+          class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200" />
+        <p class="mt-3 text-lg text-slate-600">Powers your safety buffer: visa days left minus days still needed in Australia.</p>
       </section>
 
       <!-- Historical Flight Logger -->
@@ -243,66 +204,34 @@
         </div>
       </details>
 
-      <!-- Future Travel Notepad -->
-      <section class="glass rounded-3xl p-6 sm:p-8">
-        <div class="flex items-center justify-between mb-4 gap-3">
-          <h2 class="text-2xl sm:text-3xl font-bold text-slate-800">📝 Future Plans Notepad</h2>
-          <span id="notes-status" class="text-lg text-slate-500 shrink-0"></span>
-        </div>
-        <textarea id="future-notes" rows="6" placeholder="Flight ideas, prices, itineraries…"
-          class="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-xl leading-relaxed resize-y min-h-[10rem] focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"></textarea>
-      </section>
     </div>
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════════════
-    // CONFIGURATION — paste your Supabase project credentials here
+    // CONFIGURATION
     // ═══════════════════════════════════════════════════════════════════════
     const SUPABASE_URL = 'https://lcjgboslynvslnaejebj.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxjamdib3NseW52c2xuYWVqZWJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzMjMxNDQsImV4cCI6MjA5NDg5OTE0NH0.jop_fBK4rnVskljiRJqTm8IodSjHyOkvxs-ST5sp3Xs';
 
-    /** End of current visa validity cycle (YYYY-MM-DD). Loaded from Supabase travel_notes. */
     let VISA_CYCLE_END = '';
-
-    const VISA_META_REGEX = /\n?__VISA_DATE__:(\d{4}-\d{2}-\d{2})\s*$/;
-
     const TARGET_DAYS = 730;
     const WINDOW_YEARS = 5;
-    /** Breathing room at or above this value = full green on the dashboard. */
     const BREATHING_ROOM_MAX = 365;
-    /** Fallback when data is missing, invalid, unreachable, or gradient build fails. */
     const SAFE_DEFAULT_BG = '#D1D5DB';
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Supabase client
-    // ═══════════════════════════════════════════════════════════════════════
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUser = null;
     let travelLogs = [];
     let openLogId = null;
     let isInAustralia = false;
-    let notesSaveTimer = null;
     let notesRowId = null;
     let authMode = 'signin';
-    /** Blocks recursive date/calculation handlers while the dashboard updates. */
     let isCalculating = false;
-    /** Blocks blur/change handlers while we programmatically set date inputs (load only). */
     let isSyncingInputs = false;
 
     const $ = (id) => document.getElementById(id);
-
-    function syncVisaExpiryInputFromState() {
-      const el = $('visa-expiry');
-      if (!el) return;
-      isSyncingInputs = true;
-      try {
-        el.value = VISA_CYCLE_END || '';
-      } finally {
-        isSyncingInputs = false;
-      }
-    }
 
     function clearTripDateInputs() {
       isSyncingInputs = true;
@@ -320,61 +249,8 @@
       return raw.trim();
     }
 
-    function parseNotesContent(raw) {
-      const content = typeof raw === 'string' ? raw : '';
-      let displayNotes = content;
-      let visaDate = '';
-
-      const match = content.match(VISA_META_REGEX);
-      if (match) {
-        visaDate = match[1];
-        displayNotes = content.slice(0, match.index).replace(/\n$/, '');
-      }
-
-      if (visaDate && !isValidDateString(visaDate)) visaDate = '';
-
-      return { displayNotes, visaDate };
-    }
-
-    function stripVisaMetaFromNotes(text) {
-      return (typeof text === 'string' ? text : '')
-        .replace(/\n__VISA_DATE__:\d{4}-\d{2}-\d{2}\s*$/g, '')
-        .replace(/^__VISA_DATE__:\d{4}-\d{2}-\d{2}\s*$/g, '');
-    }
-
-    /** Combine visible notepad text with hidden visa metadata for Supabase storage. */
-    function buildNotesPayload(displayContent) {
-      const body = stripVisaMetaFromNotes(displayContent ?? '').replace(/\n$/, '');
-      if (VISA_CYCLE_END && isValidDateString(VISA_CYCLE_END)) {
-        const separator = body.length > 0 ? '\n' : '';
-        return `${body}${separator}__VISA_DATE__:${VISA_CYCLE_END}`;
-      }
-      return body;
-    }
-
-    async function handleVisaExpiryBlur() {
-      if (isCalculating || isSyncingInputs) return;
-
-      const raw = $('visa-expiry')?.value?.trim() ?? '';
-
-      if (!raw) {
-        if (VISA_CYCLE_END === '') return;
-        VISA_CYCLE_END = '';
-        await saveNotes($('future-notes').value);
-        updateDashboard();
-        return;
-      }
-
-      if (!isValidDateString(raw)) return;
-      if (raw === VISA_CYCLE_END) return;
-
-      VISA_CYCLE_END = raw;
-      await saveNotes($('future-notes').value);
-      updateDashboard();
-    }
-
     // ═══════════════════════════════════════════════════════════════════════
-    // Date utilities (local calendar dates, no UTC drift)
+    // Date Utilities
     // ═══════════════════════════════════════════════════════════════════════
     function parseLocalDate(str) {
       if (!str || typeof str !== 'string') return null;
@@ -419,18 +295,11 @@
       return d;
     }
 
-    /** Inclusive calendar days between two local dates */
     function inclusiveDays(start, end) {
       const ms = end.getTime() - start.getTime();
       return Math.floor(ms / 86400000) + 1;
     }
 
-    function daysUntil(endDateStr) {
-      const safe = safeVisaDaysLeft(endDateStr);
-      return safe === null ? Infinity : safe;
-    }
-
-    /** Visa days remaining; null if date missing or invalid. */
     function safeVisaDaysLeft(endDateStr) {
       if (!isValidDateString(endDateStr)) return null;
       const end = parseLocalDate(endDateStr.trim());
@@ -439,12 +308,11 @@
         return null;
       }
       if (end < today) return 0;
-      const days = inclusiveDays(today, end) - 1;
-      return safeFiniteNumber(days, null);
+      return safeFiniteNumber(inclusiveDays(today, end) - 1, null);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Rolling 5-year window math
+    // Core Logic calculations
     // ═══════════════════════════════════════════════════════════════════════
     function getWindowStart() {
       return addYears(todayLocal(), WINDOW_YEARS);
@@ -455,64 +323,41 @@
       const windowStart = getWindowStart();
       let total = 0;
 
-      const sorted = [...logs].sort((a, b) =>
-        parseLocalDate(a.arrival_date) - parseLocalDate(b.arrival_date)
-      );
+      const sorted = [...logs].sort((a, b) => parseLocalDate(a.arrival_date) - parseLocalDate(b.arrival_date));
 
       for (const log of sorted) {
         const arrival = parseLocalDate(log.arrival_date);
         if (!arrival || arrival > today) continue;
 
-        let departure = log.departure_date
-          ? parseLocalDate(log.departure_date)
-          : today;
-
+        let departure = log.departure_date ? parseLocalDate(log.departure_date) : today;
         if (departure > today) departure = today;
         if (departure < arrival) continue;
 
         const effectiveStart = arrival < windowStart ? windowStart : arrival;
         const effectiveEnd = departure;
 
-        if (effectiveStart > effectiveEnd) continue;
-        if (effectiveEnd < windowStart) continue;
+        if (effectiveStart > effectiveEnd || effectiveEnd < windowStart) continue;
 
         total += inclusiveDays(effectiveStart, effectiveEnd);
       }
 
-      const result = safeFiniteNumber(Math.min(total, TARGET_DAYS), 0);
-      return result === null ? 0 : result;
+      return safeFiniteNumber(Math.min(total, TARGET_DAYS), 0);
     }
 
-    /** Days still required in Australia to reach the 730-day target. */
     function daysStillNeeded(bankedDays) {
-      const banked = safeFiniteNumber(bankedDays, 0);
-      if (banked === null) return 0;
-      return Math.max(0, TARGET_DAYS - banked);
+      return Math.max(0, TARGET_DAYS - safeFiniteNumber(bankedDays, 0));
     }
 
-    /**
-     * Safety buffer: visa days remaining minus days still needed in Australia.
-     * Returns null if any input is missing or not a finite number.
-     */
     function calculateBreathingRoom(bankedDays) {
       const banked = safeFiniteNumber(bankedDays, null);
-      if (banked === null) return null;
-      if (!isValidDateString(VISA_CYCLE_END)) return null;
+      if (banked === null || !isValidDateString(VISA_CYCLE_END)) return null;
 
       const visaDaysLeft = safeVisaDaysLeft(VISA_CYCLE_END);
-      const needed = safeFiniteNumber(daysStillNeeded(banked), null);
-      if (visaDaysLeft === null || needed === null) return null;
+      const needed = daysStillNeeded(banked);
+      if (visaDaysLeft === null) return null;
 
-      if (banked >= TARGET_DAYS) {
-        return safeFiniteNumber(visaDaysLeft, null);
-      }
-
-      return safeFiniteNumber(visaDaysLeft - needed, null);
-    }
-
-    function isRequirementFailed(bankedDays) {
-      const room = calculateBreathingRoom(bankedDays);
-      return room !== null && room < 0;
+      if (banked >= TARGET_DAYS) return visaDaysLeft;
+      return visaDaysLeft - needed;
     }
 
     function getStatusState(bankedDays) {
@@ -521,7 +366,7 @@
       const breathingRoom = calculateBreathingRoom(bankedDays);
       const displayVisaLeft = visaDaysLeft === null ? '—' : visaDaysLeft;
 
-      if (isRequirementFailed(bankedDays)) {
+      if (breathingRoom !== null && breathingRoom < 0) {
         return { zone: 'fail', daysNeeded, visaDaysLeft: displayVisaLeft, breathingRoom };
       }
       if (safeFiniteNumber(bankedDays, 0) >= TARGET_DAYS) {
@@ -530,10 +375,6 @@
       return { zone: 'progress', daysNeeded, visaDaysLeft: displayVisaLeft, breathingRoom };
     }
 
-    /**
-     * Build a validated CSS linear-gradient (green → red as breathing room shrinks).
-     * Returns null if any value would produce invalid CSS.
-     */
     function buildHslBreathingRoomGradient(breathingRoom) {
       const room = safeFiniteNumber(breathingRoom, null);
       const max = safeFiniteNumber(BREATHING_ROOM_MAX, null);
@@ -541,91 +382,42 @@
 
       const clamped = Math.min(Math.max(room, 0), max);
       const t = clamped / max;
-      if (!Number.isFinite(t)) return null;
-
       const hueStart = Math.round(t * 120);
       const hueEnd = Math.min(120, hueStart + 14);
-      const sat = 72;
-      const lightStart = 42;
-      const lightEnd = 50;
 
-      const parts = [hueStart, hueEnd, sat, lightStart, lightEnd];
-      if (!parts.every((n) => Number.isFinite(n) && n >= 0)) return null;
-
-      const from = `hsl(${hueStart}, ${sat}%, ${lightStart}%)`;
-      const to = `hsl(${hueEnd}, ${sat}%, ${lightEnd}%)`;
-      const gradient = `linear-gradient(145deg, ${from} 0%, ${to} 100%)`;
-
-      if (gradient.includes('NaN') || gradient.includes('undefined') || !/^linear-gradient\(/i.test(gradient)) {
-        return null;
-      }
-      return gradient;
+      return `linear-gradient(145deg, hsl(${hueStart}, 72%, 42%) 0%, hsl(${hueEnd}, 72%, 50%) 100%)`;
     }
 
-    /**
-     * Apply dashboard background — always ends on a valid colour (never blank).
-     */
     function applyDashboardBackground(bankedDays) {
       const dashboard = $('dashboard');
       if (!dashboard) return;
 
-      function applySafeGrey(reason) {
-        dashboard.classList.remove('dashboard-spectrum', 'dashboard-neutral', 'dashboard-failed');
-        dashboard.classList.add('dashboard-safe-default');
-        dashboard.style.background = SAFE_DEFAULT_BG;
-        dashboard.style.backgroundColor = SAFE_DEFAULT_BG;
-        if (reason === 'unreachable') {
-          dashboard.classList.add('dashboard-failed');
-        }
-      }
-
-      function applyGradient(css) {
-        dashboard.classList.remove('dashboard-safe-default', 'dashboard-neutral', 'dashboard-failed');
-        dashboard.classList.add('dashboard-spectrum');
-        dashboard.style.background = css;
-        dashboard.style.backgroundColor = '';
-      }
-
       try {
-        dashboard.classList.remove(
-          'dashboard-failed',
-          'dashboard-spectrum',
-          'dashboard-neutral',
-          'dashboard-safe-default'
-        );
-
         const breathingRoom = calculateBreathingRoom(bankedDays);
 
         if (breathingRoom === null) {
-          applySafeGrey('missing');
+          dashboard.style.background = SAFE_DEFAULT_BG;
           return;
         }
-
         if (breathingRoom < 0) {
-          applySafeGrey('unreachable');
+          dashboard.style.background = '#ef4444'; // Solid Red for impossible targets
           return;
         }
 
         const gradient = buildHslBreathingRoomGradient(breathingRoom);
-        if (!gradient || typeof gradient !== 'string' || gradient.trim().length === 0) {
-          applySafeGrey('invalid-gradient');
-          return;
-        }
-
-        applyGradient(gradient);
+        dashboard.style.background = gradient || SAFE_DEFAULT_BG;
       } catch (err) {
-        console.error('applyDashboardBackground failed:', err);
-        applySafeGrey('error');
+        dashboard.style.background = SAFE_DEFAULT_BG;
       }
     }
 
     function updateDashboard() {
       if (isCalculating) return;
-
       isCalculating = true;
+
       try {
         const banked = calculateBankedDays(travelLogs);
-        const needed = Math.max(0, TARGET_DAYS - banked);
+        const needed = daysStillNeeded(banked);
         const pct = Math.min(100, Math.round((banked / TARGET_DAYS) * 100));
         const theme = getStatusState(banked);
 
@@ -638,8 +430,7 @@
         $('progress-bar-container').setAttribute('aria-valuenow', banked);
 
         const windowStart = getWindowStart();
-        $('window-hint').textContent =
-          `Counting days from ${formatLocalDate(windowStart)} to today`;
+        $('window-hint').textContent = `Counting days from ${formatLocalDate(windowStart)} to today`;
 
         let msg = '';
         const room = theme.breathingRoom;
@@ -657,18 +448,13 @@
           $('progress-fill').className = 'progress-fill h-full rounded-full bg-emerald-500';
         }
         $('status-message').textContent = msg;
-
-        const bankedEl = $('days-banked');
-        if (theme.zone === 'safe') bankedEl.className = 'text-6xl sm:text-7xl font-black text-emerald-700 tabular-nums leading-none';
-        else if (theme.zone === 'fail') bankedEl.className = 'text-6xl sm:text-7xl font-black text-slate-700 tabular-nums leading-none';
-        else bankedEl.className = 'text-6xl sm:text-7xl font-black text-slate-800 tabular-nums leading-none';
       } finally {
         isCalculating = false;
       }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Toggle UI
+    // UI Interactions
     // ═══════════════════════════════════════════════════════════════════════
     function syncToggleUI() {
       const label = $('toggle-label');
@@ -677,13 +463,11 @@
       if (isInAustralia) {
         label.textContent = '📍 I am currently IN Australia';
         $('location-toggle').setAttribute('aria-pressed', 'true');
-        track.classList.remove('bg-slate-300');
-        track.classList.add('bg-emerald-500');
+        track.classList.replace('bg-slate-300', 'bg-emerald-500');
       } else {
         label.textContent = '✈️ I am OUTSIDE Australia';
         $('location-toggle').setAttribute('aria-pressed', 'false');
-        track.classList.add('bg-slate-300');
-        track.classList.remove('bg-emerald-500');
+        track.classList.replace('bg-emerald-500', 'bg-slate-300');
       }
     }
 
@@ -694,8 +478,8 @@
       syncToggleUI();
     }
 
-// ═══════════════════════════════════════════════════════════════════════
-    // Supabase data layer
+    // ═══════════════════════════════════════════════════════════════════════
+    // Supabase Core Data Management
     // ═══════════════════════════════════════════════════════════════════════
     async function loadTravelLogs() {
       const { data, error } = await supabaseClient
@@ -720,18 +504,15 @@
 
       if (data) {
         notesRowId = data.id;
-        const { displayNotes, visaDate } = parseNotesContent(data.content || '');
-        
-        VISA_CYCLE_END = visaDate || '';
+        // The content column now strictly holds just the YYYY-MM-DD string
+        VISA_CYCLE_END = data.content?.trim() || '';
         
         isSyncingInputs = true;
         try {
-          $('future-notes').value = displayNotes;
           $('visa-expiry').value = VISA_CYCLE_END;
         } finally {
           isSyncingInputs = false;
         }
-        
         updateDashboard();
       } else {
         const { data: created, error: insertErr } = await supabaseClient
@@ -742,45 +523,27 @@
 
         if (insertErr) throw insertErr;
         notesRowId = created.id;
-        
         VISA_CYCLE_END = '';
-        
-        isSyncingInputs = true;
-        try {
-          $('future-notes').value = '';
-          $('visa-expiry').value = '';
-        } finally {
-          isSyncingInputs = false;
-        }
-        
         updateDashboard();
       }
     }
 
-    // FORTIFIED: Dynamically reads both screen values live on execute to prevent race overwrites
-    async function saveNotes() {
-      if (!notesRowId) return;
-      
-      const currentText = $('future-notes').value;
-      const currentDate = $('visa-expiry').value;
-      
-      VISA_CYCLE_END = currentDate || '';
-      
-      let payload = stripVisaMetaFromNotes(currentText).replace(/\n$/, '');
-      if (currentDate && isValidDateString(currentDate)) {
-        const separator = payload.length > 0 ? '\n' : '';
-        payload = `${payload}${separator}__VISA_DATE__:${currentDate}`;
-      }
+    async function saveVisaDate() {
+      if (!notesRowId || isSyncingInputs) return;
 
-      $('notes-status').textContent = 'Saving…';
+      const selectedDate = $('visa-expiry').value;
+      VISA_CYCLE_END = selectedDate || '';
+
+      $('visa-save-status').textContent = 'Saving…';
+      
       const { error } = await supabaseClient
         .from('travel_notes')
-        .update({ content: payload, updated_at: new Date().toISOString() })
+        .update({ content: VISA_CYCLE_END, updated_at: new Date().toISOString() })
         .eq('id', notesRowId);
 
-      $('notes-status').textContent = error ? 'Save failed' : 'Saved ✓';
+      $('visa-save-status').textContent = error ? 'Save failed' : 'Saved ✓';
       if (!error) {
-        setTimeout(() => { $('notes-status').textContent = ''; }, 2000);
+        setTimeout(() => { $('visa-save-status').textContent = ''; }, 2000);
         updateDashboard();
       }
     }
@@ -789,36 +552,20 @@
       const today = formatLocalDate(todayLocal());
 
       if (isInAustralia && openLogId) {
-        const { error } = await supabaseClient
-          .from('travel_logs')
-          .update({ departure_date: today })
-          .eq('id', openLogId);
+        const { error } = await supabaseClient.from('travel_logs').update({ departure_date: today }).eq('id', openLogId);
         if (error) throw error;
       } else if (!isInAustralia) {
-        const { error } = await supabaseClient
-          .from('travel_logs')
-          .insert({
-            user_id: currentUser.id,
-            arrival_date: today,
-            departure_date: null,
-          });
+        const { error } = await supabaseClient.from('travel_logs').insert({ user_id: currentUser.id, arrival_date: today, departure_date: null });
         if (error) throw error;
       }
-
       await loadTravelLogs();
     }
 
     async function addTrip(arrival, departure) {
       if (!departure && travelLogs.some((l) => !l.departure_date)) {
-        throw new Error(
-          'You already have an open stay in Australia. Close it with the toggle or enter a departure date.'
-        );
+        throw new Error('You already have an open stay in Australia.');
       }
-      const { error } = await supabaseClient.from('travel_logs').insert({
-        user_id: currentUser.id,
-        arrival_date: arrival,
-        departure_date: departure || null,
-      });
+      const { error } = await supabaseClient.from('travel_logs').insert({ user_id: currentUser.id, arrival_date: arrival, departure_date: departure || null });
       if (error) throw error;
       await loadTravelLogs();
     }
@@ -830,9 +577,6 @@
       await loadTravelLogs();
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Trip list rendering
-    // ═══════════════════════════════════════════════════════════════════════
     function renderTripList() {
       const list = $('trip-list');
       const empty = $('trip-empty');
@@ -841,14 +585,11 @@
 
       const visible = travelLogs.filter((log) => {
         const arrival = parseLocalDate(log.arrival_date);
-        const departure = log.departure_date
-          ? parseLocalDate(log.departure_date)
-          : today;
+        const departure = log.departure_date ? parseLocalDate(log.departure_date) : today;
         return departure >= windowStart && arrival <= today;
       });
 
       list.innerHTML = '';
-
       if (visible.length === 0) {
         empty.classList.remove('hidden');
         return;
@@ -857,44 +598,26 @@
 
       for (const log of visible) {
         const li = document.createElement('li');
-        li.className =
-          'flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-4 border border-slate-100';
-
-        const depLabel = log.departure_date
-          ? formatDisplayDate(log.departure_date)
-          : 'Present';
+        li.className = 'flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-4 border border-slate-100';
+        const depLabel = log.departure_date ? formatDisplayDate(log.departure_date) : 'Present';
 
         li.innerHTML = `
           <div class="min-w-0 flex-1">
-            <p class="text-xl font-bold text-slate-800 truncate">
-              ${formatDisplayDate(log.arrival_date)} → ${depLabel}
-            </p>
+            <p class="text-xl font-bold text-slate-800 truncate">${formatDisplayDate(log.arrival_date)} → ${depLabel}</p>
             ${!log.departure_date ? '<p class="text-base text-emerald-700 font-semibold">Currently in Australia</p>' : ''}
           </div>
-          <button type="button" aria-label="Delete trip"
-            class="shrink-0 rounded-xl p-3 text-2xl hover:bg-red-100 active:scale-95 transition"
-            data-delete="${log.id}">🗑️</button>
+          <button type="button" aria-label="Delete trip" class="shrink-0 rounded-xl p-3 text-2xl hover:bg-red-100 active:scale-95 transition" data-delete="${log.id}">🗑️</button>
         `;
-
-        li.querySelector('[data-delete]').addEventListener('click', () =>
-          deleteTrip(log.id)
-        );
+        li.querySelector('[data-delete]').addEventListener('click', () => deleteTrip(log.id));
         list.appendChild(li);
       }
     }
 
     function formatDisplayDate(str) {
       const d = parseLocalDate(str);
-      return d.toLocaleDateString('en-AU', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      });
+      return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Auth UI & Flow Setup
-    // ═══════════════════════════════════════════════════════════════════════
     function showAuth() {
       $('auth-section').classList.remove('hidden');
       $('dashboard').classList.add('hidden');
@@ -906,7 +629,6 @@
       $('user-email-display').textContent = currentUser?.email || '';
     }
 
-    // Explicit error container display helper
     function showAuthError(msg) {
       const el = $('auth-message');
       el.textContent = msg;
@@ -920,10 +642,7 @@
     async function initSession() {
       const { data: { session } } = await supabaseClient.auth.getSession();
       handleSession(session);
-
-      supabaseClient.auth.onAuthStateChange((_event, session) => {
-        handleSession(session);
-      });
+      supabaseClient.auth.onAuthStateChange((_event, session) => { handleSession(session); });
     }
 
     async function handleSession(session) {
@@ -933,7 +652,7 @@
         try {
           await Promise.all([loadTravelLogs(), loadNotes()]);
         } catch (err) {
-          console.error("Data loading failed upon wake/session initialization:", err);
+          console.error("Data loading failed:", err);
         }
       } else {
         currentUser = null;
@@ -942,7 +661,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Fortified Event Listeners
+    // Initialization & Pure Listeners
     // ═══════════════════════════════════════════════════════════════════════
     document.addEventListener('DOMContentLoaded', () => {
       initSession();
@@ -964,7 +683,7 @@
           } else {
             const { error } = await supabaseClient.auth.signUp({ email, password });
             if (error) throw error;
-            alert('Signup successful! Check your inbox for a verification email if required.');
+            alert('Signup successful!');
           }
         } catch (err) {
           showAuthError(err.message || 'Authentication failed.');
@@ -978,12 +697,10 @@
         clearAuthError();
         if (authMode === 'signin') {
           authMode = 'signup';
-          $('auth-title').textContent = 'Create Account';
           $('auth-submit').textContent = 'Sign Up';
           $('auth-toggle-mode').textContent = 'Already have an account? Sign in';
         } else {
           authMode = 'signin';
-          $('auth-title').textContent = 'Visa 730-Day Tracker';
           $('auth-submit').textContent = 'Sign In';
           $('auth-toggle-mode').textContent = 'Need an account? Sign up';
         }
@@ -1000,12 +717,7 @@
 
       $('location-toggle').addEventListener('click', async () => {
         if (isCalculating) return;
-        try {
-          await toggleLocation();
-        } catch (err) {
-          alert('Failed to update your location presence. Please verify your connection.');
-          console.error(err);
-        }
+        try { await toggleLocation(); } catch (err) { alert('Failed to update location.'); }
       });
 
       $('trip-form').addEventListener('submit', async (e) => {
@@ -1016,7 +728,7 @@
         const departure = readCompleteDateInput('departure-date');
 
         if (!arrival) {
-          alert('A valid arrival date is required to save a trip.');
+          alert('A valid arrival date is required.');
           return;
         }
 
@@ -1024,43 +736,18 @@
           await addTrip(arrival, departure);
           clearTripDateInputs();
         } catch (err) {
-          alert(err.message || 'Failed to add travel log record.');
+          alert(err.message || 'Failed to add log.');
         }
       });
 
-      // --- CRITICAL BUGS REMEDIATION ZONE ---
-      
-      // Debounced text input syncs directly via global saveNotes frame
-      $('future-notes').addEventListener('input', () => {
-        clearTimeout(notesSaveTimer);
-        notesSaveTimer = setTimeout(() => {
-          saveNotes();
-        }, 1000);
-      });
-
-      // Calendar events clean execution route
-      $('visa-expiry').addEventListener('change', () => {
-        clearTimeout(notesSaveTimer);
-        saveNotes();
-      });
-
-      $('visa-expiry').addEventListener('blur', () => {
-        clearTimeout(notesSaveTimer);
-        saveNotes();
-      });
+      // Target input change & blur events directly via single handler
+      $('visa-expiry').addEventListener('change', saveVisaDate);
+      $('visa-expiry').addEventListener('blur', saveVisaDate);
        
       window.addEventListener('pageshow', async (event) => {
-        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
-          console.log("App waking from memory lifecycle state... Executing clean restoration sequence.");
-        }
-        
         if (currentUser) {
           isCalculating = false;
-          try {
-            await loadTravelLogs();
-          } catch (err) {
-            console.warn("Passive background recovery prevented loop crash successfully.");
-          }
+          try { await loadTravelLogs(); } catch (err) { console.warn("Background recovery prevented crash."); }
         }
       });
     });
