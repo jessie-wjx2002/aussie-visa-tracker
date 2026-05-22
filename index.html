@@ -1035,8 +1035,9 @@
        * we bind explicitly to 'blur'. The math executes only when the user completely taps away
        * or completes their entry interaction inside the date panel.
        */
-      $('visa-expiry').addEventListener('blur', handleVisaExpiryBlur);
-
+       $('visa-expiry').addEventListener('change', handleVisaExpiryBlur);
+       $('visa-expiry').addEventListener('blur', handleVisaExpiryBlur);
+       
       /**
        * BUG 1 REMEDIATION (Mobile Sleep / Application Wake crash protection):
        * Clean lifecycle hook listens exclusively for when a mobile device wakes up or focuses the page.
